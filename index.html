@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#10141d">
+  <meta name="description" content="ByteForge — Build freely. Develop locally. A browser-based development workstation.">
+  <title>ByteForge — Browser Development Workstation</title>
+  <link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+  <a class="skip-link" href="#editor">Skip to editor</a>
+  <div id="app">
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="ByteForge home"><span class="brand-mark">&lt;/&gt;</span><span><b>ByteForge</b><small>Build freely. Develop locally.</small></span></a>
+      <button class="project-name" id="projectNameBtn" title="Rename project"><span class="folder-icon" aria-hidden="true">▰</span><span id="projectName">untitled-project</span></button>
+      <div class="top-actions">
+        <span class="status" role="status"><i></i><span id="runtimeStatus">Workspace Ready</span></span>
+        <button id="runBtn" title="Run the active JavaScript or Python file (Ctrl+Enter in the editor)">▶ Run File</button>
+        <button id="previewBtn" title="Open live preview">◧ Preview</button>
+        <button class="primary" id="downloadBtn">↓ Download Project</button>
+        <button class="icon-btn" id="menuBtn" title="Workspace menu" aria-label="Workspace menu">⋮</button>
+      </div>
+    </header>
+    <div class="layout">
+      <nav class="activitybar" aria-label="Workspace tools">
+        <button class="activity active" data-panel="explorer" title="Explorer" aria-label="Explorer">⌘</button>
+        <button class="activity" data-panel="search" title="Search" aria-label="Search">⌕</button>
+        <button class="activity" data-panel="database" title="Database Studio" aria-label="Database Studio">▤</button>
+        <button class="activity" data-panel="terminal" title="Terminal" aria-label="Terminal">›_</button>
+        <button class="activity" data-panel="settings" title="Settings" aria-label="Settings">⚙</button>
+        <button class="activity" data-panel="help" title="Help and documentation" aria-label="Help and documentation">?</button>
+      </nav>
+      <aside class="sidepanel" id="sidepanel" aria-label="Side panel">
+        <div class="panel-heading"><b id="sideTitle">Explorer</b><button class="icon-btn" id="collapseSide" title="Collapse sidebar" aria-label="Collapse sidebar">×</button></div>
+        <div id="sideContent"></div>
+      </aside>
+      <main class="workarea">
+        <div class="tabs" id="tabs" role="tablist" aria-label="Open files"></div>
+        <div class="split">
+          <section class="editor-wrap">
+            <div id="editor" class="hidden" aria-label="Code editor"></div>
+            <div class="binary-view hidden" id="binaryView"></div>
+            <div class="welcome" id="welcome">
+              <div class="welcome-mark">&lt;/&gt;</div>
+              <h1>Build something great.</h1>
+              <p>Your workspace is stored in this browser. Create a file or import an existing project to begin.</p>
+              <div class="welcome-actions"><button class="primary" id="welcomeNew">＋ New File</button><button id="importBtn">Import Project</button><button id="quickOpenBtn">Open File… (Ctrl+P)</button></div>
+              <div class="capabilities"><span>Local-first</span><span>Browser runtimes</span><span>Portable projects</span></div>
+            </div>
+          </section>
+          <aside class="preview-pane hidden" id="previewPane" aria-label="Live preview">
+            <div class="preview-bar"><b id="previewTitle">Preview</b><span class="spacer"></span><button class="icon-btn" id="previewRefresh" title="Refresh preview" aria-label="Refresh preview">↻</button><button class="icon-btn" id="previewExternal" title="Open in a new tab" aria-label="Open preview in a new tab">↗</button><button class="icon-btn" id="previewClose" title="Close preview" aria-label="Close preview">×</button></div>
+            <iframe id="previewFrame" title="Preview" sandbox="allow-scripts allow-modals allow-forms allow-popups"></iframe>
+          </aside>
+        </div>
+        <section class="bottom-panel" id="bottomPanel" aria-label="Panel">
+          <div class="bottom-tabs" role="tablist">
+            <button class="bottom-tab active" data-bottom="terminal" role="tab">›_ Terminal</button>
+            <button class="bottom-tab" data-bottom="output" role="tab">☰ Output</button>
+            <button class="bottom-tab" data-bottom="database" role="tab">▤ Database</button>
+            <button class="bottom-tab" data-bottom="problems" role="tab">ⓘ Problems <span class="badge hidden" id="problemBadge">0</span></button>
+            <span class="spacer"></span><button class="icon-btn" id="clearTerminal" title="Clear terminal / output" aria-label="Clear">⌫</button><button class="icon-btn" id="collapseBottom" title="Collapse panel (Ctrl+J)" aria-label="Collapse panel">⌄</button>
+          </div>
+          <div class="bottom-content">
+            <div id="terminal"></div>
+            <pre id="outputPanel" class="output-panel hidden" aria-live="polite">Output from Run File and the preview console appears here.</pre>
+            <div id="databasePanel" class="database-panel hidden">
+              <div class="db-toolbar">
+                <b>SQLite (sql.js)</b>
+                <button id="runSql" class="primary" title="Ctrl+Enter">Run</button>
+                <button id="exportSql">Export .sqlite</button>
+                <button id="dumpSqlBtn">Export .sql</button>
+                <button id="csvSql">Result CSV</button>
+                <button id="importSqlBtn">Import…</button>
+                <button id="resetSql" class="danger">Reset DB</button>
+                <span class="muted" id="dbInfo"></span>
+              </div>
+              <textarea id="sqlInput" spellcheck="false" aria-label="SQL editor"></textarea>
+              <div id="sqlResults" class="sql-results" aria-live="polite"></div>
+            </div>
+            <div id="problemsPanel" class="problems-panel hidden">No problems reported.</div>
+          </div>
+        </section>
+      </main>
+    </div>
+    <footer class="statusbar"><span><i></i> <span id="saveStatus">Ready</span></span><span id="fileStatus">No file selected</span><span class="spacer"></span><span id="cursorStatus"></span><span id="languageStatus">Plain Text</span><span id="storageStatus">Local workspace</span></footer>
+  </div>
+
+  <div class="toast-stack" id="toastStack" role="status" aria-live="polite"></div>
+  <div class="modal-backdrop hidden" id="modal">
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <header><b id="modalTitle">Notice</b><button class="icon-btn" id="modalClose" aria-label="Close dialog">×</button></header>
+      <div id="modalBody"></div>
+      <footer id="modalActions"></footer>
+    </section>
+  </div>
+  <input id="fileInput" type="file" multiple hidden>
+  <input id="folderInput" type="file" webkitdirectory multiple hidden>
+  <input id="zipInput" type="file" accept=".zip,application/zip" hidden>
+  <input id="dbInput" type="file" accept=".sqlite,.sqlite3,.db,.sql" hidden>
+  <div class="drop-overlay hidden" id="dropOverlay">Drop files, folders or a ZIP to import</div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

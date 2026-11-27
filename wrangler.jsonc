@@ -1,0 +1,12 @@
+// Cloudflare Workers (static assets) configuration. Build with `npm run build`, then deploy
+// ./dist (`npm run deploy`, or connect the repository in Workers Builds with build command
+// `npm run build` and deploy command `npx wrangler deploy`).
+// No Worker script is needed: Cloudflare serves ./dist directly, and `dist/_headers`
+// (copied from public/_headers) is still applied to the assets.
+{
+  "name": "byteforge",
+  "compatibility_date": "2026-11-27",
+  "assets": {
+    "directory": "./dist"
+  }
+}

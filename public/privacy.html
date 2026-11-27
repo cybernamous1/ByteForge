@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Policy — ByteForge</title><meta name="description" content="ByteForge Privacy Policy"><link rel="stylesheet" href="/site.css"></head>
+<body><header class="site"><b>ByteForge</b><a href="/">Open ByteForge</a><a href="/docs.html">Docs</a><a href="/faq.html">FAQ</a><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a><a href="/about.html">About</a></header><main>
+<h1>Privacy Policy</h1>
+<p class="muted">This policy describes what the ByteForge software does. The operator of the website where you found it may add their own practices; see the About page.</p>
+<h2>Summary</h2>
+<ul><li>No accounts, no sign-in, no analytics, no advertising, no tracking pixels and no cookies set by the application.</li><li>Your projects and databases are processed and stored on your device.</li><li>Network requests to third parties happen only when you start optional features, listed below.</li></ul>
+<h2>Data stored on your device</h2>
+<table><tr><th>Data</th><th>Where</th><th>Purpose</th></tr>
+<tr><td>Project files, folders, open tabs, SQL editor text</td><td>IndexedDB (<code>byteforge</code>)</td><td>Keeping your workspace between visits</td></tr>
+<tr><td>SQLite database file</td><td>IndexedDB</td><td>Keeping Database Studio data</td></tr>
+<tr><td>Preferences (theme, font size, …)</td><td>localStorage (<code>byteforge.settings</code>)</td><td>Remembering your settings</td></tr></table>
+<p>This data is not encrypted and is readable by anyone with access to your browser profile, by browser extensions with site access, and by any script running on this origin. You can remove everything with Settings → Delete all local data, or by clearing site data in your browser.</p>
+<h2>Network requests</h2>
+<table><tr><th>When</th><th>Who receives a request</th><th>What</th></tr>
+<tr><td>Loading ByteForge</td><td>The hosting provider of this deployment (for example Cloudflare)</td><td>Standard web request data such as IP address, user agent and requested URL, handled under that provider's and the operator's policies. ByteForge's code, editor, SQLite engine and fonts are served from the same origin; no third-party CDN is used for them.</td></tr>
+<tr><td>You start the Node.js runtime and confirm the prompt</td><td>StackBlitz (WebContainers)</td><td>The browser loads WebContainer assets. Your project files are mounted inside the browser and are not uploaded by ByteForge. StackBlitz's own privacy policy applies to its servers.</td></tr>
+<tr><td>You run <code>npm install</code> in the runtime</td><td>The npm registry</td><td>Package names and versions you request.</td></tr>
+<tr><td>You run Python and confirm the prompt</td><td>cdn.jsdelivr.net</td><td>Download of Pyodide files.</td></tr>
+<tr><td>Your own code makes requests (preview, runtime, fetch)</td><td>Whatever hosts your code contacts</td><td>Determined entirely by your code.</td></tr></table>
+<h2>What ByteForge does not do</h2>
+<p>It does not send your files, database, secret-detection findings or usage statistics anywhere. Secret detection runs entirely in your browser.</p>
+<h2>Children</h2><p>ByteForge is a developer tool and is not directed at children.</p>
+<h2>Changes</h2><p>This page is updated together with the software when behavior changes.</p>
+</main><footer class="site muted">ByteForge — Build freely. Develop locally. · <a href="/docs.html">Documentation</a> · <a href="/privacy.html">Privacy</a> · <a href="/terms.html">Terms</a></footer></body></html>

@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Documentation — ByteForge</title><meta name="description" content="ByteForge Documentation"><link rel="stylesheet" href="/site.css"></head>
+<body><header class="site"><b>ByteForge</b><a href="/">Open ByteForge</a><a href="/docs.html">Docs</a><a href="/faq.html">FAQ</a><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a><a href="/about.html">About</a></header><main>
+<h1>Documentation</h1>
+<p class="muted">This page describes what the current build actually does. Anything not listed here is not implemented.</p>
+
+<h2>Workspace and storage</h2>
+<p>Your project (files, folders, open tabs, SQL editor text) is stored in this browser's <b>IndexedDB</b>, and the Database Studio SQLite file is stored separately in the same database. Preferences (theme, font size, …) are stored in <code>localStorage</code>. Nothing is sent to a server. Storage is <b>not encrypted</b>, and browsers may evict site data under storage pressure unless persistent storage is granted (Settings → Request persistent storage). <b>Download a project backup regularly.</b></p>
+<p>The workspace is saved automatically about 0.7 seconds after changes, and when the tab is hidden or closed. If saving fails (quota, private browsing), the status bar shows <code>NOT SAVED</code> and a warning appears. Opening ByteForge in two tabs at once is not supported: the last save wins, and a warning is shown.</p>
+
+<h2>Editor</h2>
+<p>The editor is Monaco (the engine behind VS Code) with multi-file tabs, a file tree with folders, rename/move/delete, project-wide search (literal or regular expression), quick open (<code>Ctrl/Cmd+P</code>) and the Monaco command palette (<code>F1</code>). Diagnostics are <b>syntax errors only</b> for JavaScript/TypeScript, because npm packages and Node.js type definitions are not available to the in-browser language service. JSON, CSS and HTML use Monaco's built-in language services. Binary files (images, fonts, …) are preserved and can be downloaded but not edited.</p>
+<table><tr><th>Shortcut</th><th>Action</th></tr>
+<tr><td>Ctrl/Cmd+P</td><td>Open file by name</td></tr><tr><td>Ctrl/Cmd+S</td><td>Save now (and format the document if enabled in Settings)</td></tr>
+<tr><td>Ctrl/Cmd+Enter</td><td>Run the active file (JavaScript, Python, SQL, HTML preview)</td></tr>
+<tr><td>Ctrl/Cmd+J</td><td>Show/hide the bottom panel</td></tr><tr><td>Ctrl/Cmd+B</td><td>Show/hide the sidebar</td></tr><tr><td>Esc</td><td>Leave distraction-free mode</td></tr></table>
+
+<h2>Running code</h2>
+<table><tr><th>Mechanism</th><th>What it runs</th><th>Where it runs / what it contacts</th><th>Limits</th></tr>
+<tr><td><b>Run File</b> / <code>node file.js</code></td><td>Plain JavaScript (async function body)</td><td>Isolated Web Worker in your browser. No network requests are made by ByteForge.</td><td>10 s timeout. No <code>import</code>/<code>export</code> syntax, no <code>require</code>, no npm packages.</td></tr>
+<tr><td><b>Python</b> / <code>python file.py</code></td><td>CPython via Pyodide (WebAssembly)</td><td>Isolated Web Worker. Pyodide is downloaded from <code>cdn.jsdelivr.net</code> after you confirm a prompt. Workspace files are copied into its virtual file system for each run.</td><td>Experimental. 60 s timeout. Only the Pyodide standard distribution; no pip installs. Not verified in the automated test suite.</td></tr>
+<tr><td><b>Node.js runtime</b> (<code>run</code>)</td><td>A real Node.js environment and shell with npm</td><td>WebContainers by StackBlitz, loaded from StackBlitz servers after you confirm a prompt. <code>npm install</code> contacts the npm registry.</td><td>Requires cross-origin isolation and a supported browser. Not available on most mobile browsers. Subject to WebContainer licensing terms.</td></tr>
+<tr><td><b>SQL</b></td><td>SQLite</td><td>sql.js (SQLite compiled to WebAssembly), bundled with the app and served from the same origin.</td><td>Single database, whole file kept in memory.</td></tr></table>
+<p>Languages such as Go, Rust, Java, PHP or Ruby are <b>highlighted</b> but cannot be executed by ByteForge.</p>
+
+<h2>Terminal</h2>
+<p>Before the runtime starts, the terminal is a small <b>workspace shell</b>. It is not a POSIX shell: there is no piping, globbing, job control or environment. Commands: <code>help ls tree cat head tail mkdir touch rm mv cp echo grep wc node python sql run sync preview clear</code>. They operate on the real workspace, so <code>rm</code> and <code>mv</code> change your project. <code>echo text &gt; file</code> and <code>&gt;&gt;</code> are supported. Tab completes paths; arrow keys browse history.</p>
+<p><code>run</code> starts the WebContainer runtime and attaches its real <code>jsh</code> shell. Workspace edits are copied into the container automatically. Files created by the runtime (for example by <code>npm</code>) are <b>not</b> copied back automatically: use <code>sync</code> in the workspace shell, the “Pull runtime files” button, or the ⋮ menu. <code>node_modules</code> and <code>.git</code> are never copied back, and files deleted inside the runtime are not deleted from the workspace.</p>
+
+<h2>Preview</h2>
+<p><b>Static preview</b> renders an HTML file from the workspace in a sandboxed frame. Linked stylesheets, classic <code>&lt;script src&gt;</code> files and local images are inlined. <code>console</code> output and errors appear in the Output tab. It refreshes as you type. Limits: <code>type="module"</code> scripts and ES module graphs are <b>not</b> inlined (use a dev server in the Node.js runtime), the frame has an opaque origin (no access to the workspace; <code>localStorage</code> and cookies are unavailable to it), and external resources are subject to the page's cross-origin isolation rules, so many third-party CDN resources will be blocked.</p>
+<p><b>Runtime preview</b> appears automatically when a dev server inside the Node.js runtime starts listening, and can be opened in its own tab.</p>
+
+<h2>Database Studio</h2>
+<p>Run any number of SQL statements (Ctrl/Cmd+Enter runs the selection, or everything when nothing is selected). Results are shown as tables (first 500 rows). You can export the database as a <code>.sqlite</code> file, export a portable <code>.sql</code> dump (schema + data), export the last result as CSV, import a <code>.sqlite</code>/<code>.db</code> file (replaces the current database after confirmation) or run a <code>.sql</code> script. The database is saved in IndexedDB after write statements. PostgreSQL, MySQL, DuckDB and other engines are <b>not</b> included in this build.</p>
+
+<h2>Import and export</h2>
+<p><b>Import</b>: files, folders, ZIP archives (also by drag and drop). ZIP entries with unsafe paths (<code>..</code>) are skipped; <code>node_modules</code> and <code>.git</code> are ignored; single top-level folders are unwrapped; files above 50 MB, archives above 300 MB or 5000 files are partly skipped and reported. You are asked before existing files are overwritten. Binary files are kept as binary. SQLite files found in an import can be loaded into Database Studio.</p>
+<p><b>Export</b>: a ZIP of the project, generated locally. Environment files (<code>.env</code>, <code>.env.local</code>, …; templates such as <code>.env.example</code> are always included) are excluded unless you opt in and acknowledge the warning. The dialog lists every potential secret found. You can include the SQLite database. Individual files can be downloaded from the ⋮ menu.</p>
+
+<h2>Secret detection</h2>
+<p>Files are scanned locally as you type, on import and before export. Patterns include private key blocks, AWS access key IDs, GitHub, Slack, Stripe, Google API and <code>sk-</code> style keys, JSON Web Tokens, database URLs with passwords, bearer tokens and generic <code>password</code>/<code>secret</code>/<code>token</code>/<code>api key</code> assignments (placeholders such as <code>replace_me</code>, <code>process.env.X</code> and template files like <code>.env.example</code> are ignored). Findings appear in the Problems panel with masked values. Detection is <b>heuristic</b>: it can miss secrets and can flag harmless text. Values are never transmitted or modified.</p>
+
+<h2>Browser compatibility</h2>
+<table><tr><th>Feature</th><th>Requirement</th></tr>
+<tr><td>Editor, files, import/export, SQLite, JS runner, static preview</td><td>A current Chromium-based browser, Firefox or Safari with IndexedDB and WebAssembly. Private/incognito modes may not keep data.</td></tr>
+<tr><td>Node.js runtime</td><td>Cross-origin isolation (<code>COOP: same-origin</code>, <code>COEP: require-corp</code>, served by the included <code>_headers</code> file) and a browser supported by WebContainers. Chromium-based desktop browsers have the best support; check StackBlitz's current compatibility notes for Firefox and Safari. Mobile browsers are generally unsupported.</td></tr>
+<tr><td>Python</td><td>WebAssembly and Web Workers; internet access to jsDelivr for the first load.</td></tr>
+<tr><td>Folder import</td><td>Browsers that support <code>webkitdirectory</code> / directory drag and drop.</td></tr></table>
+
+<h2>Third-party components</h2>
+<table><tr><th>Component</th><th>Use</th><th>License (verify before distribution)</th></tr>
+<tr><td>Monaco Editor</td><td>Editor</td><td>MIT</td></tr><tr><td>xterm.js and xterm-addon-fit</td><td>Terminal</td><td>MIT</td></tr>
+<tr><td>sql.js</td><td>SQLite</td><td>MIT</td></tr><tr><td>JSZip</td><td>ZIP import/export</td><td>MIT or GPL-3.0 (dual)</td></tr>
+<tr><td>Vite</td><td>Build tooling</td><td>MIT</td></tr>
+<tr><td>@webcontainer/api (WebContainers)</td><td>Node.js runtime</td><td>Governed by StackBlitz's terms; commercial use may require a license</td></tr>
+<tr><td>Pyodide (loaded on demand)</td><td>Python</td><td>MPL-2.0</td></tr></table>
+
+<h2>Troubleshooting</h2>
+<ul><li><b>“Runtime unavailable: not cross-origin isolated”</b> — the host is not sending the COOP/COEP headers, or the browser is unsupported. When self-hosting, deploy with the included <code>public/_headers</code> (Cloudflare Pages).</li>
+<li><b>“NOT SAVED”</b> — browser storage is full or disabled. Download a backup, free space, and request persistent storage in Settings.</li>
+<li><b>Preview is blank or missing styles</b> — check the Output tab for “[preview]” notes (missing files, module scripts).</li>
+<li><b>Runtime started but the preview does not open</b> — the dev server must listen on a port and bind to <code>0.0.0.0</code> or localhost inside the container (<code>vite --host 0.0.0.0</code>).</li></ul>
+</main><footer class="site muted">ByteForge — Build freely. Develop locally. · <a href="/docs.html">Documentation</a> · <a href="/privacy.html">Privacy</a> · <a href="/terms.html">Terms</a></footer></body></html>
