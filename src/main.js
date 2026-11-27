@@ -13,11 +13,14 @@ import { normalizePath, basename, dirname, languageFor, languageLabel, isEnvFile
 import { scanContent, scanAll } from './lib/secrets.js';
 import { searchFiles } from './lib/search.js';
 import { createShell } from './lib/shell.js';
-import { buildPreview } from './lib/preview.js';
+import { buildPreview, buildStandalonePreview } from './lib/preview.js';
 import { toFileSystemTree } from './lib/wctree.js';
 import { toCsv, dumpSql, toTextTable } from './lib/sqlutil.js';
 import { kvGet, kvSet, deleteEverything, storageEstimate, requestPersistence } from './lib/storage.js';
 import { runJavaScript, runPython, resetPython, PYODIDE_VERSION } from './lib/runner.js';
+import { ServerRegistry, ProcessManager, parseScripts, previewUrl, pathOf, sandboxLabel, SANDBOX_NOTE } from './lib/servers.js';
+import { detectRuntimeSupport, runtimeEnv, RUNTIME_FALLBACKS } from './lib/support.js';
+import { computeView, viewEnv, stepFont, FONT_STEPS } from './lib/viewmode.js';
 import { toast, dialog, askInput, confirmDialog, escapeHtml, closeDialog } from './ui.js';
 
 const $ = id => document.getElementById(id); // static ids declared in index.html only
@@ -35,7 +38,7 @@ const STARTER = {
   '.env.example': 'API_KEY=replace_me\nDATABASE_URL=replace_me\n'
 };
 const DEFAULT_SQL = "CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY, title TEXT NOT NULL);\nINSERT INTO notes (title) VALUES ('First note');\nSELECT * FROM notes;";
-const DEFAULT_SETTINGS = { theme: 'dark', fontSize: 14, tabSize: 2, wordWrap: false, minimap: false, formatOnSave: false };
+const DEFAULT_SETTINGS = { theme: 'dark', fontSize: 14, tabSize: 2, wordWrap: false, minimap: false, formatOnSave: false, viewMode: 'auto' };
 
 const ws = new Workspace();
 const S = {
@@ -43,7 +46,7 @@ const S = {
   collapsed: new Set(), settings: { ...DEFAULT_SETTINGS }, sqlText: DEFAULT_SQL,
   editor: null, models: new Map(), term: null, fit: null, termMode: 'lite', line: '', history: [], histIdx: -1, busy: false,
   db: null, SQL: null, lastResult: null,
-  wc: null, wcShell: null, wcInput: null, serverUrl: null, syncing: false,
+  wc: null, wcShell: null, wcInput: null, previewPort: null, previewUrl: null, view: null, syncing: false,
   secrets: new Map(), batch: false, storageOk: true, legacyPending: false, suppressModel: false, previewMode: null, previewEntry: null
 };
 const debounce = (fn, ms) => { let t; const d = (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; d.flush = (...a) => { clearTimeout(t); fn(...a); }; return d; };
@@ -59,9 +62,11 @@ function applySettings() {
   const s = S.settings;
   document.documentElement.dataset.theme = s.theme;
   monaco.editor.setTheme(s.theme === 'light' ? 'vs' : 'vs-dark');
-  S.editor?.updateOptions({ fontSize: s.fontSize, tabSize: s.tabSize, wordWrap: s.wordWrap ? 'on' : 'off', minimap: { enabled: s.minimap } });
+  S.editor?.updateOptions({ fontSize: effectiveFont(), tabSize: s.tabSize, wordWrap: s.wordWrap ? 'on' : 'off', minimap: { enabled: s.minimap } });
   if (S.term) { S.term.options.theme = termTheme(); }
 }
+// iOS Safari zooms the whole page when a focused text field is below 16px; Monaco's hidden input inherits the editor font size.
+const effectiveFont = () => (S.view?.ios ? Math.max(16, S.settings.fontSize) : S.settings.fontSize);
 const termTheme = () => (S.settings.theme === 'light'
   ? { background: '#ffffff', foreground: '#1b2433', cursor: '#1b2433', selectionBackground: '#b8d3ff' }
   : { background: '#0e131c', foreground: '#dce6f6', cursor: '#ffffff' });
@@ -126,7 +131,7 @@ function initEditor() {
   const s = S.settings;
   S.editor = monaco.editor.create($('editor'), {
     model: null, theme: s.theme === 'light' ? 'vs' : 'vs-dark', automaticLayout: true, minimap: { enabled: s.minimap },
-    fontSize: s.fontSize, tabSize: s.tabSize, wordWrap: s.wordWrap ? 'on' : 'off', scrollBeyondLastLine: false, fixedOverflowWidgets: true
+    fontSize: effectiveFont(), tabSize: s.tabSize, wordWrap: s.wordWrap ? 'on' : 'off', scrollBeyondLastLine: false, fixedOverflowWidgets: true
   });
   const ts = monaco.languages.typescript ?? monaco.typescript;
   if (ts) {
@@ -170,6 +175,7 @@ function openFile(path, { line = null, col = 1 } = {}) {
   if (!ws.fileExists(path)) return;
   if (!S.open.includes(path)) S.open.push(path);
   setActive(path);
+  if (S.view?.compact) $('sidepanel').classList.add('collapsed'); // overlay sidebar: reveal the editor after choosing a file
   if (line && S.editor && !isBinary(path)) { S.editor.revealLineInCenter(line); S.editor.setPosition({ lineNumber: line, column: col }); S.editor.focus(); }
   saveSoon();
 }
@@ -228,7 +234,8 @@ function renderTabs() {
   const tools = document.createElement('div'); tools.className = 'tab-tools';
   const add = document.createElement('button'); add.className = 'icon-btn'; add.textContent = '＋'; add.title = 'New file'; add.setAttribute('aria-label', 'New file'); add.onclick = () => createFile();
   const focus = document.createElement('button'); focus.className = 'icon-btn'; focus.textContent = '⛶'; focus.title = 'Distraction-free editor (Esc to leave)'; focus.setAttribute('aria-label', 'Toggle distraction-free editor'); focus.onclick = toggleFocus;
-  tools.append(add, focus); host.append(tools);
+  const sizeBtn = (text, label, dir) => { const b = document.createElement('button'); b.className = 'icon-btn zoom-ctl'; b.textContent = text; b.title = label; b.setAttribute('aria-label', label); b.onclick = () => { S.settings.fontSize = stepFont(S.settings.fontSize, dir); saveSettings(); applySettings(); if (S.side === 'settings') renderSide(); }; return b; };
+  tools.append(sizeBtn('A−', 'Smaller editor text', -1), sizeBtn('A+', 'Larger editor text', 1), add, focus); host.append(tools);
 }
 function toggleFocus() { document.body.classList.toggle('focus-mode'); S.editor?.layout(); }
 
@@ -403,16 +410,57 @@ function renderDbSide(host) {
   }
 }
 function renderTermSide(host) {
-  const status = document.createElement('p');
-  status.className = 'muted';
-  status.textContent = S.wc ? 'Node.js WebContainer runtime is running.' : (window.crossOriginIsolated ? 'Node.js runtime is not started.' : 'This page is not cross-origin isolated, so the Node.js runtime cannot start. Check the COOP/COEP headers of this deployment.');
-  host.append(status);
-  const row = document.createElement('div'); row.className = 'row';
+  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
+  const support = detectRuntimeSupport(runtimeEnv(window));
+  host.append(el('p', 'muted', S.wc ? 'Node.js WebContainer runtime is running.' : support.canBoot ? 'Node.js runtime is not started.' : 'Node.js runtime is unavailable in this browser.'));
+  if (!S.wc && !support.canBoot) {
+    const n = el('div', 'notice bad'); n.append(el('b', '', 'Why it cannot start'));
+    const ul = el('ul'); support.blockers.forEach(b => ul.append(el('li', '', b))); n.append(ul);
+    n.append(el('b', '', 'Still available'));
+    const ul2 = el('ul'); RUNTIME_FALLBACKS.forEach(b => ul2.append(el('li', '', b))); n.append(ul2); host.append(n);
+  } else if (!S.wc && support.warnings.length) {
+    const n = el('div', 'notice'); const ul = el('ul'); support.warnings.forEach(b => ul.append(el('li', '', b))); n.append(ul); host.append(n);
+  }
+  const row = el('div', 'row');
   row.append(btn('Open Terminal', () => selectBottom('terminal')), btn(S.wc ? 'Open runtime shell' : 'Start Node.js runtime', () => bootRuntime(), 'primary'));
   if (S.wc) row.append(btn('Pull runtime files', () => syncFromRuntime(), '', 'Copy files created in the runtime (for example by npm) into the workspace'));
   host.append(row);
-  const n = document.createElement('p'); n.className = 'muted';
-  n.textContent = 'Starting the runtime contacts StackBlitz servers to load WebContainer, and npm install contacts the npm registry. Nothing is started automatically.';
+
+  if (S.wc) {
+    host.append(el('b', '', 'Run'));
+    const pkg = ws.read('package.json');
+    const parsed = typeof pkg === 'string' ? parseScripts(pkg) : { scripts: [], error: 'No package.json in this project.' };
+    const inst = el('div', 'row'); inst.style.marginTop = '6px';
+    inst.append(btn('npm install', installDeps, '', 'Install dependencies inside the runtime (contacts the npm registry)'));
+    host.append(inst);
+    if (parsed.error) host.append(el('p', 'muted', parsed.error));
+    else if (!parsed.scripts.length) host.append(el('p', 'muted', 'package.json has no scripts. Add one such as "dev" or "start", or run commands in the terminal.'));
+    for (const sc of parsed.scripts) {
+      const r = el('div', 'script-row'); const code = el('code', '', `${sc.name}`); code.title = sc.command;
+      const running = procs.running().some(p => p.script === sc.name);
+      const go = btn(running ? 'Running' : '▶ Start', () => startScript(sc.name), running ? '' : 'primary'); go.disabled = running;
+      r.append(code, go); host.append(r);
+    }
+  }
+
+  const list = servers.list();
+  host.append(el('b', '', `Servers (${list.length})`));
+  if (!list.length) host.append(el('p', 'muted', S.wc ? 'No server is listening. Start a script above or run one in the shell; ports are detected automatically and can be previewed here.' : 'Servers started in the runtime appear here with their preview URLs.'));
+  for (const s of list) {
+    const owner = s.owner ? procs.get(s.owner) : null;
+    const card = el('div', 'server-card' + (S.previewPort === s.port && S.previewMode === 'runtime' ? ' active' : ''));
+    const t = el('div', 'title'); t.append(el('span', '', sandboxLabel(s.port)), el('span', 'pill ' + (s.ready ? 'ok' : 'warn'), s.ready ? 'ready' : 'starting')); card.append(t);
+    card.append(el('div', 'meta', `${s.url ?? 'URL pending'}\n${owner ? `started by: ${owner.label}` : 'started in the shell'}`));
+    const r = el('div', 'row');
+    if (s.ready) r.append(btn('Preview', () => showServer(s.port), 'primary'), btn('Open in tab', () => window.open(s.url, '_blank', 'noopener')));
+    r.append(btn('Stop', () => stopServer(s.port), 'danger', owner ? 'Stops the process that runs this server' : 'Sends Ctrl+C to the runtime shell'));
+    if (owner?.script) r.append(btn('Restart', () => restartServer(s.port)));
+    card.append(r); host.append(card);
+  }
+  const tasks = procs.running('task');
+  for (const p of tasks) { const r = el('div', 'script-row'); r.append(el('code', '', `${p.label} (running)`), btn('Stop', () => procs.stop(p.id), 'danger')); host.append(r); }
+  host.append(el('p', 'notice', SANDBOX_NOTE));
+  const n = el('p', 'muted'); n.textContent = 'Starting the runtime contacts StackBlitz servers to load WebContainer, and npm install contacts the npm registry. Nothing is started automatically.';
   host.append(n);
 }
 function renderSettings(host) {
@@ -423,7 +471,8 @@ function renderSettings(host) {
   const update = (k, v) => { s[k] = v; saveSettings(); applySettings(); };
   host.append(
     field('Theme', sel([['dark', 'Dark'], ['light', 'Light']], s.theme, v => update('theme', v))),
-    field('Font size', sel([12, 13, 14, 16, 18, 20].map(n => [n, `${n}px`]), s.fontSize, v => update('fontSize', +v))),
+    field('Font size', sel(FONT_STEPS.map(n => [n, `${n}px`]), s.fontSize, v => update('fontSize', +v))),
+    field('Layout', sel([['auto', 'Auto (detect phone / desktop site)'], ['mobile', 'Mobile layout'], ['desktop', 'Desktop layout']], s.viewMode, v => { update('viewMode', v); applyView(); })),
     field('Tab size', sel([2, 4, 8].map(n => [n, `${n} spaces`]), s.tabSize, v => update('tabSize', +v))),
     check('Word wrap', s.wordWrap, v => update('wordWrap', v)),
     check('Minimap', s.minimap, v => update('minimap', v)),
@@ -522,6 +571,8 @@ function selectBottom(which) {
   document.querySelectorAll('.bottom-tab').forEach(b => { const on = b.dataset.bottom === which; b.classList.toggle('active', on); b.setAttribute('aria-selected', String(on)); });
   $('terminal').classList.toggle('hidden', which !== 'terminal');
   $('outputPanel').classList.toggle('hidden', which !== 'output');
+  $('serversPanel').classList.toggle('hidden', which !== 'servers');
+  $('termKeys').classList.toggle('hidden', which !== 'terminal');
   $('databasePanel').classList.toggle('hidden', which !== 'database');
   $('problemsPanel').classList.toggle('hidden', which !== 'problems');
   $('bottomPanel').classList.remove('collapsed');
@@ -538,6 +589,7 @@ function outLog(kind, text) {
 }
 function clearActivePanel() {
   if (S.bottom === 'output') { const o = $('outputPanel'); o.textContent = ''; o.dataset.empty = 'no'; }
+  else if (S.bottom === 'servers') { const o = $('serversPanel'); o.textContent = ''; o.dataset.empty = 'no'; S.lastLogId = null; }
   else S.term?.clear();
 }
 
@@ -556,7 +608,19 @@ function initTerminal() {
   tw('Type "run" to start the Node.js WebContainer runtime for a real shell with npm.\n');
   prompt();
   S.term.onData(onTerminalData);
+  initTermKeys();
   new ResizeObserver(() => fitTerminal()).observe($('terminal'));
+}
+// Soft keyboards lack Esc/Tab/Ctrl+C/arrows; this key bar (shown on touch devices) sends the same sequences xterm would.
+const TERM_KEYS = [['Esc', '\x1b'], ['Tab', '\t'], ['Ctrl+C', '\x03'], ['↑', '\x1b[A'], ['↓', '\x1b[B'], ['←', '\x1b[D'], ['→', '\x1b[C'], ['/', '/'], ['-', '-'], ['~', '~'], ['|', '|']];
+function initTermKeys() {
+  const host = $('termKeys'); host.textContent = '';
+  for (const [label, seq] of TERM_KEYS) {
+    const b = document.createElement('button'); b.textContent = label; b.setAttribute('aria-label', `Send ${label} to the terminal`);
+    b.onpointerdown = e => e.preventDefault(); // keep the on-screen keyboard open
+    b.onclick = () => onTerminalData(seq);
+    host.append(b);
+  }
 }
 function onTerminalData(d) {
   if (S.termMode === 'jsh') { S.wcInput?.write(d); return; }
@@ -642,31 +706,80 @@ async function runActive() {
 }
 
 /* ───────────────────────── Node.js WebContainer runtime ───────────────────────── */
-async function bootRuntime() {
-  if (S.wc) { startJsh(); selectBottom('terminal'); return; }
-  selectBottom('terminal');
-  if (!window.crossOriginIsolated) {
-    tw('Runtime unavailable: this page is not cross-origin isolated (needs COOP/COEP headers and a supported browser).\n');
-    toast('Runtime unavailable', 'WebContainers need cross-origin isolation. Serve the app with the included _headers file and use a supported desktop browser.', { level: 'warning' });
-    return;
+const servers = new ServerRegistry();
+const procs = new ProcessManager({
+  spawn: (cmd, args) => S.wc.spawn(cmd, args),
+  onLog: (rec, text) => serverLog(rec, text),
+  onChange: rec => {
+    if (rec.status !== 'running' && rec.status !== 'starting') {
+      servers.closeOwned(rec.id);
+      if (rec.kind === 'task' && rec.status === 'exited' && !rec.notified) { rec.notified = true; toast(`${rec.label} ${rec.code === 0 ? 'finished' : `failed (exit code ${rec.code})`}`, 'Details are in the Servers tab.', { level: rec.code === 0 ? 'info' : 'error' }); }
+    }
+    renderServerBadge(); if (S.side === 'terminal') renderSide();
   }
-  const ok = S.wcConsent || await confirmDialog('Start Node.js runtime?', '<p>The runtime uses <b>WebContainers</b> by StackBlitz. Starting it loads WebContainer assets from StackBlitz servers, and <code>npm install</code> downloads packages from the npm registry. Your project files are mounted into the in-browser container and are not uploaded. Review the WebContainer licensing terms before commercial use.</p>', { confirmLabel: 'Start runtime' });
-  if (!ok) return;
+});
+servers.onChange(() => { renderServerBadge(); syncPreviewChrome(); if (S.side === 'terminal') renderSide(); });
+
+function serverLog(rec, text) {
+  const out = $('serversPanel');
+  if (out.dataset.empty !== 'no') { out.textContent = ''; out.dataset.empty = 'no'; S.logChunks = 0; }
+  if (S.lastLogId !== rec.id) { S.lastLogId = rec.id; out.append(`\n── ${rec.label} ──\n`); S.logChunks++; }
+  out.append(text); S.logChunks++;
+  if (S.logChunks > 1500) { out.textContent = out.textContent.slice(-100000); S.logChunks = 1; } // keep the log bounded
+  out.scrollTop = out.scrollHeight;
+}
+function renderServerBadge() {
+  const n = servers.list().filter(s => s.ready).length, b = $('serverBadge');
+  b.textContent = String(n); b.classList.toggle('hidden', !n);
+}
+
+function runtimeUnavailable(support) {
+  $('runtimeStatus').textContent = 'Runtime unavailable';
+  tw('Node.js runtime unavailable:\n' + support.blockers.map(b => '  - ' + b).join('\n') + '\nStill available: static preview, JavaScript/Python runners, SQLite, the workspace shell and ZIP export.\n');
+  prompt();
+  toast('Node.js runtime unavailable here', support.blockers[0] + ' You can still use the static preview, the JavaScript runner and SQLite.', { level: 'warning', ttl: 14000, action: { label: 'Open static preview', run: () => openPreview() } });
+  if (S.side === 'terminal') renderSide();
+}
+
+let booting = null;
+function bootRuntime() {
+  if (S.wc) { startJsh(); selectBottom('terminal'); return Promise.resolve(true); }
+  return booting ??= doBoot().finally(() => { booting = null; });
+}
+async function doBoot() {
+  selectBottom('terminal');
+  const support = detectRuntimeSupport(runtimeEnv(window));
+  if (!support.canBoot) { runtimeUnavailable(support); return false; }
+  const caveats = support.warnings.length ? `<div class="notice"><b>Heads up</b><ul>${support.warnings.map(w => `<li>${escapeHtml(w)}</li>`).join('')}</ul></div>` : '';
+  const ok = S.wcConsent || await confirmDialog('Start Node.js runtime?', '<p>The runtime uses <b>WebContainers</b> by StackBlitz. Starting it loads WebContainer assets from StackBlitz servers, and <code>npm install</code> downloads packages from the npm registry. Your project files are mounted into the in-browser container and are not uploaded. Review the WebContainer licensing terms before commercial use.</p>' + caveats, { confirmLabel: 'Start runtime' });
+  if (!ok) return false;
   S.wcConsent = true;
   $('runtimeStatus').textContent = 'Booting runtime…'; tw('Booting Node.js runtime…\n');
   try {
     S.wc = await WebContainer.boot();
     await S.wc.mount(toFileSystemTree(ws.files, ws.folders));
-    S.wc.on('server-ready', (port, url) => { S.serverUrl = url; tw(`\r\n[preview] server on port ${port} → ${url}\r\n`); showUrlPreview(url); });
+    const claimed = () => new Set(servers.list().map(x => x.owner).filter(Boolean));
+    // 'port' fires for every listening port (open/close); 'server-ready' confirms an HTTP server. Both are tracked so several servers can run at once.
+    S.wc.on('port', (port, type, url) => {
+      if (type === 'open') servers.open(port, url, { owner: servers.get(port)?.owner ?? procs.ownerForNewPort(claimed()) });
+      else servers.close(port);
+    });
+    S.wc.on('server-ready', (port, url) => {
+      servers.open(port, url, { ready: true, owner: servers.get(port)?.owner ?? procs.ownerForNewPort(claimed()) });
+      tw(`\r\n[preview] ${sandboxLabel(port)} is ready → ${url}\r\n[preview] This is the in-browser sandbox, not your device's localhost.\r\n`);
+      showServer(port);
+    });
     S.wc.on('error', e => tw(`\r\n[runtime error] ${e.message}\r\n`));
     $('runtimeStatus').textContent = 'Node.js Runtime Ready';
     startJsh();
-    toast('Runtime ready', ws.fileExists('package.json') ? 'Run "npm install" and then your script, for example "npm run dev".' : 'Create a package.json, then use npm in the shell.');
+    toast('Runtime ready', ws.fileExists('package.json') ? 'Run "npm install" and then your script, for example "npm run dev" (or use Start in Terminal & Runtime).' : 'Create a package.json, then use npm in the shell.');
     if (S.side === 'terminal') renderSide();
+    return true;
   } catch (e) {
     S.wc = null; $('runtimeStatus').textContent = 'Runtime unavailable';
     tw(`Runtime unavailable: ${e.message}\n`); prompt();
-    toast('Runtime could not start', `${e.message}. WebContainers need a supported browser, cross-origin isolation and access to StackBlitz servers. If it failed after booting once, reload the page to retry.`, { level: 'error' });
+    toast('Runtime could not start', `${e.message}. WebContainers need a supported browser, cross-origin isolation and access to StackBlitz servers. If it failed after booting once, reload the page to retry. The static preview and JavaScript runner still work.`, { level: 'error', action: { label: 'Open static preview', run: () => openPreview() } });
+    return false;
   }
 }
 async function startJsh() {
@@ -680,6 +793,44 @@ async function startJsh() {
     fitTerminal();
   } catch (e) { tw(`Could not start runtime shell: ${e.message}\n`); prompt(); }
 }
+
+/* ── dev servers: start / stop / restart ── */
+async function startScript(name) {
+  if (!S.wc && !await bootRuntime()) return;
+  if (procs.running('server').some(p => p.script === name)) { toast('Already running', `"npm run ${name}" is already running. Stop it first or use Restart.`, { level: 'warning' }); return; }
+  const hasModules = await S.wc.fs.readdir('node_modules').then(() => true, () => false);
+  const pkg = ws.read('package.json');
+  if (!hasModules && typeof pkg === 'string' && /"(?:dependencies|devDependencies)"\s*:\s*\{\s*"/.test(pkg)) {
+    toast('Dependencies are not installed', 'This project lists dependencies but node_modules does not exist in the runtime yet.', { level: 'warning', action: { label: 'Run npm install', run: installDeps } });
+    return;
+  }
+  selectBottom('servers');
+  try { await procs.start(`npm run ${name}`, 'npm', ['run', name], { kind: 'server', script: name }); }
+  catch (e) { toast('Could not start', e.message, { level: 'error' }); }
+}
+async function installDeps() {
+  if (!S.wc && !await bootRuntime()) return;
+  if (procs.running('task').length) { toast('A task is already running', 'Wait for it to finish or stop it in Terminal & Runtime.', { level: 'warning' }); return; }
+  selectBottom('servers');
+  try { await procs.start('npm install', 'npm', ['install'], { kind: 'task' }); }
+  catch (e) { toast('Could not start npm install', e.message, { level: 'error' }); }
+}
+function stopServer(port) {
+  const s = servers.get(port); if (!s) return;
+  const owner = s.owner ? procs.get(s.owner) : null;
+  if (owner?.status === 'running') { procs.stop(owner.id); return; }
+  if (S.wcInput) {
+    S.wcInput.write('\x03');
+    toast('Sent Ctrl+C to the runtime shell', `${sandboxLabel(port)} was not started by ByteForge's Start button, so ByteForge cannot target it directly. If several programs run in the shell, check the terminal that the right one stopped.`, { level: 'warning' });
+  } else toast('Cannot stop this server from here', 'It was not started by ByteForge and no runtime shell is attached. Stop it from the terminal that started it.', { level: 'warning' });
+}
+async function restartServer(port) {
+  const s = servers.get(port); const owner = s?.owner ? procs.get(s.owner) : null;
+  if (!owner?.script) { toast('Cannot restart', 'Only servers started with the Start button can be restarted from here.', { level: 'warning' }); return; }
+  if (owner.status === 'running') { procs.stop(owner.id); await owner.handle.exit.catch(() => {}); }
+  await startScript(owner.script);
+}
+
 async function syncFromRuntime() {
   if (!S.wc) { toast('Runtime not running', 'Start the Node.js runtime first.', { level: 'warning' }); return; }
   const SKIP = new Set(['node_modules', '.git', '.npm', '.cache', '.pnpm-store']);
@@ -715,9 +866,10 @@ function pickPreviewEntry(preferred) {
   return ws.allFiles().find(f => /\.html?$/i.test(f)) ?? null;
 }
 function openPreview(preferred) {
-  if (S.serverUrl && !preferred) { showUrlPreview(S.serverUrl); return; }
+  const live = servers.active;
+  if (!preferred && live?.ready) { showServer(live.port); return; }
   const entry = pickPreviewEntry(preferred);
-  if (!entry) { toast('Nothing to preview', 'Add an HTML file (for example index.html), or start the Node.js runtime and run a dev server.', { level: 'warning' }); return; }
+  if (!entry) { toast('Nothing to preview', 'Add an HTML file (for example index.html), or start a dev server in Terminal & Runtime.', { level: 'warning', action: { label: 'Servers…', run: () => showSide('terminal') } }); return; }
   S.previewEntry = entry; showStaticPreview();
 }
 function showStaticPreview() {
@@ -728,18 +880,78 @@ function showStaticPreview() {
     const frame = $('previewFrame');
     frame.setAttribute('sandbox', 'allow-scripts allow-modals allow-forms allow-popups'); // opaque origin: no access to the workspace
     frame.removeAttribute('src'); frame.srcdoc = html;
-    S.previewMode = 'static'; S.previewEntry = entry;
-    $('previewTitle').textContent = `Preview · ${entry}`; $('previewPane').classList.remove('hidden');
+    S.previewMode = 'static'; S.previewEntry = entry; S.previewPort = null; S.previewUrl = null;
+    $('previewPane').classList.remove('hidden'); syncPreviewChrome();
     notes.forEach(n => outLog('warn', `[preview] ${n}`));
   } catch (e) { toast('Preview failed', e.message, { level: 'error' }); }
 }
-function showUrlPreview(url) {
-  const frame = $('previewFrame');
-  frame.setAttribute('sandbox', 'allow-scripts allow-modals allow-forms allow-popups allow-same-origin'); // runtime origin is separate from ByteForge
-  frame.removeAttribute('srcdoc'); frame.src = url;
-  S.previewMode = 'runtime'; $('previewTitle').textContent = 'Preview · Node.js runtime'; $('previewPane').classList.remove('hidden');
+/** Show a sandbox server in the preview pane (the runtime URL has its own origin, separate from ByteForge). */
+function showServer(port) {
+  const s = servers.get(port); if (!s?.url) return;
+  servers.setActive(port);
+  S.previewMode = 'runtime'; S.previewPort = port;
+  $('previewPane').classList.remove('hidden');
+  loadRuntimeFrame(s.url);
 }
-function closePreview() { $('previewPane').classList.add('hidden'); $('previewFrame').removeAttribute('srcdoc'); $('previewFrame').removeAttribute('src'); S.previewMode = null; }
+function loadRuntimeFrame(url) {
+  const frame = $('previewFrame');
+  frame.setAttribute('sandbox', 'allow-scripts allow-modals allow-forms allow-popups allow-same-origin');
+  frame.removeAttribute('srcdoc'); frame.src = url; S.previewUrl = url;
+  syncPreviewChrome();
+}
+const STOPPED_PAGE = port => `<!doctype html><meta charset="utf-8"><body style="font:15px system-ui;display:grid;place-items:center;height:100vh;margin:0;color:#445;background:#f4f6fa;text-align:center"><p><b>${escapeHtml(sandboxLabel(port))}</b> is not running.<br>Start it again from Terminal &amp; Runtime.</p>`;
+/** Keep the selector, address bar, badge and buttons in step with what is actually running. */
+function syncPreviewChrome() {
+  const sel = $('previewServer'), bar = $('previewUrlBar'), note = $('previewNote'), stop = $('previewStop');
+  const entry = S.previewEntry && ws.fileExists(S.previewEntry) ? S.previewEntry : pickPreviewEntry();
+  sel.textContent = '';
+  if (entry) { const o = document.createElement('option'); o.value = 'static'; o.textContent = `Static · ${entry}`; sel.append(o); }
+  for (const s of servers.list()) { const o = document.createElement('option'); o.value = String(s.port); o.textContent = `${sandboxLabel(s.port)}${s.ready ? '' : ' (starting)'}`; sel.append(o); }
+  if (S.previewMode === 'runtime' && S.previewPort !== null && !servers.get(S.previewPort)) {
+    const frame = $('previewFrame');
+    frame.setAttribute('sandbox', 'allow-scripts'); frame.removeAttribute('src'); frame.srcdoc = STOPPED_PAGE(S.previewPort);
+    const next = servers.list().find(x => x.ready);
+    S.previewUrl = null;
+    if (next) { showServer(next.port); return; }
+    S.previewMode = 'stopped';
+  }
+  const runtime = S.previewMode === 'runtime' && servers.get(S.previewPort);
+  sel.value = runtime ? String(S.previewPort) : (entry ? 'static' : sel.value);
+  bar.classList.toggle('hidden', !runtime); note.classList.toggle('hidden', !runtime); stop.classList.toggle('hidden', !runtime);
+  if (runtime) {
+    $('previewOrigin').textContent = sandboxLabel(S.previewPort); $('previewOrigin').title = SANDBOX_NOTE;
+    note.textContent = `Running inside ByteForge's in-browser sandbox. localhost:${S.previewPort} here is NOT your device's localhost.`;
+    const input = $('previewPath'); if (document.activeElement !== input) input.value = pathOf(S.previewUrl || servers.get(S.previewPort).url);
+  }
+}
+function previewGo() {
+  const s = servers.get(S.previewPort); if (!s) return;
+  const url = previewUrl(s.url, $('previewPath').value);
+  if (!url) { toast('Not a sandbox path', `Enter a path on ${sandboxLabel(s.port)}, for example /about. Other sites cannot be opened from here.`, { level: 'warning' }); return; }
+  loadRuntimeFrame(url);
+}
+function previewRefresh() {
+  if (S.previewMode === 'runtime' && S.previewUrl) loadRuntimeFrame(S.previewUrl);
+  else if (S.previewMode === 'static') showStaticPreview();
+}
+function previewExternal() {
+  if (S.previewMode === 'runtime' && S.previewUrl) { window.open(S.previewUrl, '_blank', 'noopener'); return; }
+  if (S.previewMode === 'static') openStaticInTab();
+}
+/** Static previews open in their own tab as a sandboxed snapshot (the project's code never gets ByteForge's origin). */
+function openStaticInTab() {
+  const entry = S.previewEntry && ws.fileExists(S.previewEntry) ? S.previewEntry : pickPreviewEntry();
+  if (!entry) return;
+  try {
+    const { html } = buildPreview(ws.files, entry);
+    const url = URL.createObjectURL(new Blob([buildStandalonePreview(html, `${S.project} · ${entry}`)], { type: 'text/html' }));
+    const win = window.open(url, '_blank');
+    if (!win) { URL.revokeObjectURL(url); toast('Pop-up blocked', 'Allow pop-ups for this site, then try again.', { level: 'warning' }); return; }
+    setTimeout(() => URL.revokeObjectURL(url), 120000);
+    toast('Opened a snapshot in a new tab', 'It shows the files as they are now and does not live-update. Use the refresh button here and reopen it to see later changes, or run a dev server for live reload.');
+  } catch (e) { toast('Preview failed', e.message, { level: 'error' }); }
+}
+function closePreview() { $('previewPane').classList.add('hidden'); $('previewFrame').removeAttribute('srcdoc'); $('previewFrame').removeAttribute('src'); S.previewMode = null; S.previewPort = null; S.previewUrl = null; }
 window.addEventListener('message', e => {
   if (e.source !== $('previewFrame').contentWindow || !e.data || e.data.__bf !== 1) return;
   const kind = e.data.type === 'error' ? 'error' : e.data.type === 'warn' ? 'warn' : 'log';
@@ -998,18 +1210,44 @@ async function openMenu() {
   await dialog({ title: 'Workspace options', node, actions: [{ label: 'Close', value: null }] });
 }
 function setSide(panel) {
-  const side = $('sidepanel');
-  if (S.side === panel && !side.classList.contains('collapsed')) { side.classList.add('collapsed'); return; }
-  side.classList.remove('collapsed'); S.side = panel;
+  if (S.side === panel && !$('sidepanel').classList.contains('collapsed')) { $('sidepanel').classList.add('collapsed'); return; }
+  showSide(panel);
+}
+function showSide(panel) {
+  $('sidepanel').classList.remove('collapsed'); S.side = panel;
   document.querySelectorAll('.activity').forEach(x => x.classList.toggle('active', x.dataset.panel === panel));
   renderSide();
-  if (panel === 'terminal') selectBottom('terminal');
+  if (panel === 'terminal' && !S.view?.compact) selectBottom('terminal'); // on phones the side panel is an overlay: do not switch panels behind it
+}
+
+/* ───────────────────────── view mode (phone / desktop site / desktop) ───────────────────────── */
+function applyView() {
+  S.view = computeView(viewEnv(window), S.settings.viewMode);
+  const root = document.documentElement;
+  root.classList.toggle('touch', S.view.touch); root.classList.toggle('compact', S.view.compact);
+  S.editor?.updateOptions({ fontSize: effectiveFont() });
+  setTimeout(() => { S.editor?.layout(); fitTerminal(); }, 60);
+}
+// Keep the app exactly as tall as what is visible (on-screen keyboards, collapsing URL bars) unless the user has pinch-zoomed:
+// while zoomed we leave the size alone so panning and zooming stay completely free.
+function initViewport() {
+  const vv = window.visualViewport; if (!vv) return;
+  const sync = () => {
+    if (!document.documentElement.classList.contains('touch')) return;
+    if (Math.abs(vv.scale - 1) > 0.02) { document.documentElement.style.removeProperty('--app-h'); return; }
+    document.documentElement.style.setProperty('--app-h', `${vv.height}px`);
+    if (vv.offsetTop > 0) window.scrollTo(0, 0);
+    S.editor?.layout(); fitTerminal();
+  };
+  vv.addEventListener('resize', sync); vv.addEventListener('scroll', () => { if (Math.abs(vv.scale - 1) <= 0.02 && vv.offsetTop > 0) window.scrollTo(0, 0); });
+  sync();
 }
 function wire() {
   document.querySelectorAll('.activity').forEach(b => { b.onclick = () => setSide(b.dataset.panel); });
   $('collapseSide').onclick = () => $('sidepanel').classList.add('collapsed');
   document.querySelectorAll('.bottom-tab').forEach(b => { b.onclick = () => selectBottom(b.dataset.bottom); });
   $('collapseBottom').onclick = () => { $('bottomPanel').classList.toggle('collapsed'); setTimeout(fitTerminal, 50); };
+  $('maxBottom').onclick = () => { $('bottomPanel').classList.remove('collapsed'); $('bottomPanel').classList.toggle('maxed'); setTimeout(() => { fitTerminal(); S.editor?.layout(); }, 60); };
   $('clearTerminal').onclick = clearActivePanel;
   $('welcomeNew').onclick = () => createFile();
   $('importBtn').onclick = () => $('zipInput').click();
@@ -1022,8 +1260,12 @@ function wire() {
   $('downloadBtn').onclick = exportProject;
   $('runBtn').onclick = runActive;
   $('previewBtn').onclick = () => openPreview();
-  $('previewRefresh').onclick = () => { if (S.previewMode === 'runtime') $('previewFrame').src = S.serverUrl; else showStaticPreview(); };
-  $('previewExternal').onclick = () => { if (S.previewMode === 'runtime' && S.serverUrl) window.open(S.serverUrl, '_blank', 'noopener'); else toast('Static preview stays inside ByteForge', 'It runs in a sandboxed frame so imported code cannot read your workspace. Start a dev server in the Node.js runtime to get a URL that can open in its own tab.'); };
+  $('previewRefresh').onclick = previewRefresh;
+  $('previewExternal').onclick = previewExternal;
+  $('previewStop').onclick = () => { if (S.previewPort !== null) stopServer(S.previewPort); };
+  $('previewGo').onclick = previewGo;
+  $('previewPath').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); previewGo(); } });
+  $('previewServer').onchange = e => { const v = e.target.value; if (v === 'static') { S.previewEntry = pickPreviewEntry(); showStaticPreview(); } else showServer(+v); };
   $('previewClose').onclick = closePreview;
   $('runSql').onclick = runSql;
   $('sqlInput').addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); runSql(); } });
@@ -1062,8 +1304,10 @@ function wire() {
   } catch { /* BroadcastChannel unavailable */ }
   window.addEventListener('beforeunload', flushOnUnload);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') { saveSoon.flush(); saveDbSoon.flush(); } });
-  window.addEventListener('resize', fitTerminal);
+  window.addEventListener('resize', () => { fitTerminal(); applyViewSoon(); });
+  window.addEventListener('orientationchange', () => setTimeout(applyView, 150));
 }
+const applyViewSoon = debounce(() => applyView(), 150);
 function flushOnUnload() { saveSoon.flush(); saveDbSoon.flush(); }
 
 /* ───────────────────────── startup ───────────────────────── */
@@ -1071,9 +1315,12 @@ async function main() {
   loadSettings();
   document.documentElement.dataset.theme = S.settings.theme;
   await restore();
+  applyView();
+  if (S.view.compact) $('sidepanel').classList.add('collapsed'); // phones start with the editor visible
   initEditor();
   applySettings();
   wire();
+  initViewport();
   initTerminal();
   renderSide(); renderTabs();
   if (S.active) setActive(S.active); else if (S.open.length) setActive(S.open[0]); else setActive(null);

@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <script>/* first-paint layout class; the full logic (with the user's View setting) is src/lib/viewmode.js */(function(){try{var d=document.documentElement,m=matchMedia('(pointer: coarse)').matches,k=Math.min(screen.width,screen.height)<=820,p=(JSON.parse(localStorage.getItem('byteforge.settings')||'{}').viewMode)||'auto',c=p==='mobile'||(p==='auto'&&(innerWidth<=760||(m&&k)));if(m)d.classList.add('touch');if(c)d.classList.add('compact')}catch(e){}})();</script>
   <meta name="theme-color" content="#10141d">
   <meta name="description" content="ByteForge — Build freely. Develop locally. A browser-based development workstation.">
   <title>ByteForge — Browser Development Workstation</title>
@@ -18,7 +19,7 @@
         <span class="status" role="status"><i></i><span id="runtimeStatus">Workspace Ready</span></span>
         <button id="runBtn" title="Run the active JavaScript or Python file (Ctrl+Enter in the editor)">▶ Run File</button>
         <button id="previewBtn" title="Open live preview">◧ Preview</button>
-        <button class="primary" id="downloadBtn">↓ Download Project</button>
+        <button class="primary" id="downloadBtn" title="Download the project as a ZIP" aria-label="Download project">↓<span class="lbl"> Download Project</span></button>
         <button class="icon-btn" id="menuBtn" title="Workspace menu" aria-label="Workspace menu">⋮</button>
       </div>
     </header>
@@ -50,21 +51,37 @@
             </div>
           </section>
           <aside class="preview-pane hidden" id="previewPane" aria-label="Live preview">
-            <div class="preview-bar"><b id="previewTitle">Preview</b><span class="spacer"></span><button class="icon-btn" id="previewRefresh" title="Refresh preview" aria-label="Refresh preview">↻</button><button class="icon-btn" id="previewExternal" title="Open in a new tab" aria-label="Open preview in a new tab">↗</button><button class="icon-btn" id="previewClose" title="Close preview" aria-label="Close preview">×</button></div>
+            <div class="preview-bar">
+              <b id="previewTitle">Preview</b>
+              <select id="previewServer" aria-label="Preview source" title="Choose what to preview"></select>
+              <span class="spacer"></span>
+              <button class="icon-btn" id="previewRefresh" title="Refresh preview" aria-label="Refresh preview">↻</button>
+              <button class="icon-btn" id="previewExternal" title="Open in a new tab" aria-label="Open preview in a new tab">↗</button>
+              <button class="icon-btn hidden" id="previewStop" title="Stop this server" aria-label="Stop this server">■</button>
+              <button class="icon-btn" id="previewClose" title="Close preview" aria-label="Close preview">×</button>
+            </div>
+            <div class="preview-urlbar hidden" id="previewUrlBar">
+              <span class="origin-badge" id="previewOrigin" tabindex="0"></span>
+              <input id="previewPath" type="text" spellcheck="false" autocapitalize="off" autocomplete="off" inputmode="url" aria-label="Path inside the sandbox server" placeholder="/">
+              <button id="previewGo" title="Load this path">Go</button>
+            </div>
             <iframe id="previewFrame" title="Preview" sandbox="allow-scripts allow-modals allow-forms allow-popups"></iframe>
+            <div class="preview-note hidden" id="previewNote" role="note"></div>
           </aside>
         </div>
         <section class="bottom-panel" id="bottomPanel" aria-label="Panel">
           <div class="bottom-tabs" role="tablist">
             <button class="bottom-tab active" data-bottom="terminal" role="tab">›_ Terminal</button>
             <button class="bottom-tab" data-bottom="output" role="tab">☰ Output</button>
+            <button class="bottom-tab" data-bottom="servers" role="tab">⇄ Servers <span class="badge ok hidden" id="serverBadge">0</span></button>
             <button class="bottom-tab" data-bottom="database" role="tab">▤ Database</button>
             <button class="bottom-tab" data-bottom="problems" role="tab">ⓘ Problems <span class="badge hidden" id="problemBadge">0</span></button>
-            <span class="spacer"></span><button class="icon-btn" id="clearTerminal" title="Clear terminal / output" aria-label="Clear">⌫</button><button class="icon-btn" id="collapseBottom" title="Collapse panel (Ctrl+J)" aria-label="Collapse panel">⌄</button>
+            <span class="spacer"></span><button class="icon-btn" id="clearTerminal" title="Clear terminal / output" aria-label="Clear">⌫</button><button class="icon-btn" id="maxBottom" title="Maximize or restore panel" aria-label="Maximize or restore panel">⤢</button><button class="icon-btn" id="collapseBottom" title="Collapse panel (Ctrl+J)" aria-label="Collapse panel">⌄</button>
           </div>
           <div class="bottom-content">
             <div id="terminal"></div>
             <pre id="outputPanel" class="output-panel hidden" aria-live="polite">Output from Run File and the preview console appears here.</pre>
+            <pre id="serversPanel" class="output-panel hidden" aria-live="polite">Output from servers and tasks started with the Node.js runtime appears here (Terminal &amp; Runtime panel → Start).</pre>
             <div id="databasePanel" class="database-panel hidden">
               <div class="db-toolbar">
                 <b>SQLite (sql.js)</b>
@@ -81,6 +98,7 @@
             </div>
             <div id="problemsPanel" class="problems-panel hidden">No problems reported.</div>
           </div>
+          <div class="term-keys" id="termKeys" role="toolbar" aria-label="Terminal keys"></div>
         </section>
       </main>
     </div>

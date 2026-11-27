@@ -12,7 +12,7 @@
   --term-bg: #ffffff; --shadow: 0 10px 30px rgba(20,30,50,.18); color-scheme: light;
 }
 * { box-sizing: border-box; }
-html, body { height: 100%; margin: 0; }
+html, body { height: 100%; margin: 0; overscroll-behavior: none; }
 body { background: var(--bg); color: var(--text); font: 14px/1.45 var(--sans); overflow: hidden; }
 .hidden { display: none !important; }
 .spacer { flex: 1; }
@@ -31,7 +31,7 @@ button.danger { color: var(--danger); }
 .icon-btn:hover { color: var(--text); background: var(--bg3); }
 input[type=text], input[type=search], input:not([type]), select, textarea { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
 
-#app { height: 100%; display: flex; flex-direction: column; }
+#app { height: 100%; height: var(--app-h, 100dvh); display: flex; flex-direction: column; }
 .topbar { display: flex; align-items: center; gap: 14px; padding: 6px 12px; background: var(--bg2); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
 .brand { display: flex; align-items: center; gap: 9px; text-decoration: none; color: var(--text); }
 .brand small { display: block; color: var(--muted); font-size: 11px; }
@@ -90,7 +90,14 @@ mark { background: color-mix(in srgb, var(--warn) 45%, transparent); color: inhe
 .binary-view img { max-width: 90%; max-height: 60%; background: repeating-conic-gradient(var(--bg3) 0 25%, transparent 0 50%) 0 0/16px 16px; }
 .preview-pane { width: 46%; min-width: 280px; border-left: 1px solid var(--line); display: flex; flex-direction: column; background: #fff; }
 .preview-bar { display: flex; align-items: center; padding: 3px 8px; background: var(--bg2); border-bottom: 1px solid var(--line); }
-.preview-pane iframe { flex: 1; border: 0; background: #fff; width: 100%; }
+.preview-pane iframe { flex: 1; border: 0; background: #fff; width: 100%; min-height: 0; }
+.preview-bar { gap: 4px; }
+.preview-bar select { max-width: 55%; min-width: 0; padding: 3px 6px; }
+.preview-urlbar { display: flex; align-items: center; gap: 6px; padding: 4px 8px; background: var(--bg2); border-bottom: 1px solid var(--line); }
+.preview-urlbar input { flex: 1; min-width: 0; padding: 3px 8px; }
+.origin-badge { font: 600 11px var(--mono); white-space: nowrap; padding: 2px 8px; border-radius: 999px; background: color-mix(in srgb, var(--warn) 22%, transparent); color: var(--text); border: 1px solid color-mix(in srgb, var(--warn) 60%, transparent); cursor: help; }
+.preview-note { padding: 6px 10px; font-size: 12px; color: var(--muted); background: var(--bg2); border-top: 1px solid var(--line); max-height: 30%; overflow: auto; }
+.preview-bar select:empty { display: none; }
 
 .bottom-panel { height: 250px; border-top: 1px solid var(--line); background: var(--bg2); display: flex; flex-direction: column; min-height: 0; resize: vertical; overflow: auto; }
 .bottom-panel.collapsed { height: 34px; resize: none; overflow: hidden; }
@@ -98,6 +105,26 @@ mark { background: color-mix(in srgb, var(--warn) 45%, transparent); color: inhe
 .bottom-tab { background: transparent; border-color: transparent; color: var(--muted); border-radius: 0; padding: 6px 10px; }
 .bottom-tab.active { color: var(--text); box-shadow: inset 0 -2px 0 var(--accent); }
 .badge { background: var(--danger); color: #fff; border-radius: 999px; padding: 0 6px; font-size: 11px; }
+.badge.ok { background: var(--ok); color: #08140d; }
+.bottom-tabs { overflow-x: auto; scrollbar-width: none; }
+.bottom-tab { white-space: nowrap; }
+.bottom-panel.maxed { height: 72%; }
+.term-keys { display: none; gap: 4px; padding: 4px 6px; border-top: 1px solid var(--line); overflow-x: auto; background: var(--bg2); }
+.term-keys button { flex: none; min-width: 40px; padding: 4px 8px; font: 12px var(--mono); }
+.server-card { border: 1px solid var(--line); border-radius: 8px; padding: 8px; margin: 8px 0; background: var(--bg); }
+.server-card.active { border-color: var(--accent); }
+.server-card .title { display: flex; justify-content: space-between; gap: 6px; align-items: center; font-weight: 600; }
+.server-card .meta { font: 11px var(--mono); color: var(--muted); word-break: break-all; margin: 3px 0 6px; }
+.server-card .row { margin: 0; }
+.pill { font: 600 10px var(--mono); border-radius: 999px; padding: 1px 7px; border: 1px solid var(--line); color: var(--muted); }
+.pill.ok { color: var(--ok); border-color: var(--ok); }
+.pill.warn { color: var(--warn); border-color: var(--warn); }
+.notice { border-left: 3px solid var(--warn); padding: 4px 8px; margin: 8px 0; font-size: 12px; color: var(--muted); background: var(--bg); border-radius: 0 6px 6px 0; }
+.notice.bad { border-left-color: var(--danger); }
+.notice ul { margin: 4px 0 0; padding-left: 18px; }
+.script-row { display: flex; gap: 6px; align-items: center; margin: 4px 0; }
+.script-row code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.zoom-ctl { display: none; }
 .bottom-content { flex: 1; min-height: 0; position: relative; }
 #terminal { position: absolute; inset: 0; background: var(--term-bg); padding: 4px 6px; }
 .output-panel, .problems-panel { position: absolute; inset: 0; margin: 0; padding: 8px 12px; overflow: auto; font: 12px/1.5 var(--mono); background: var(--term-bg); white-space: pre-wrap; }
@@ -138,12 +165,40 @@ mark { background: color-mix(in srgb, var(--warn) 45%, transparent); color: inhe
 .drop-overlay { position: fixed; inset: 0; background: color-mix(in srgb, var(--accent) 25%, transparent); border: 3px dashed var(--accent); display: grid; place-items: center; font-size: 22px; z-index: 70; pointer-events: none; }
 body.focus-mode .topbar, body.focus-mode .activitybar, body.focus-mode .sidepanel, body.focus-mode .bottom-panel, body.focus-mode .statusbar { display: none; }
 
-@media (max-width: 760px) {
-  .brand small, .project-name { display: none; }
-  .sidepanel { position: absolute; z-index: 20; top: 0; bottom: 0; left: 46px; width: min(86vw, 300px); box-shadow: var(--shadow); }
-  .layout { position: relative; }
-  .preview-pane { position: absolute; inset: 0; width: 100%; z-index: 15; }
-  .split { position: relative; }
-  .bottom-panel { height: 200px; }
-}
+/* Layout classes are set by src/lib/viewmode.js (and an inline script in index.html for first paint):
+   html.touch   = primary pointer is a finger (phones, tablets, and phones in "desktop site" mode)
+   html.compact = phone-style layout; chosen by width, by touch + small screen, or by Settings → View */
+html.touch body { position: fixed; inset: 0; width: 100%; }
+html.touch button, html.touch .tab, html.touch .tree-row, html.touch .quick-item, html.touch .table-row, html.touch .search-hit { touch-action: manipulation; }
+html.touch button { min-height: 38px; }
+html.touch .icon-btn { min-width: 38px; }
+html.touch .tree-row { min-height: 38px; }
+html.touch .tree-row .acts { display: flex; }
+html.touch .tree-row .acts button { min-height: 32px; min-width: 32px; }
+html.touch .tab { min-height: 38px; }
+html.touch .tab .x { padding: 6px 10px; }
+html.touch input, html.touch select, html.touch textarea, html.touch #sqlInput, html.touch .xterm-helper-textarea { font-size: 16px !important; } /* iOS zooms the page when a focused field is < 16px */
+html.touch .term-keys { display: flex; }
+html.touch .zoom-ctl { display: inline-flex; }
+html.touch .bottom-panel { resize: none; }
+html.touch .bottom-tab { padding: 8px 12px; }
+
+html.compact .brand > span:last-child, html.compact #downloadBtn .lbl, html.compact .brand small, html.compact .project-name, html.compact .status, html.compact #storageStatus, html.compact #languageStatus { display: none; }
+html.compact .topbar { flex-wrap: nowrap; gap: 8px; overflow-x: auto; scrollbar-width: none; padding: 4px 8px; padding-top: max(4px, env(safe-area-inset-top)); }
+html.compact .top-actions { flex-wrap: nowrap; flex: none; }
+html.compact .top-actions button { white-space: nowrap; }
+html.compact .layout { position: relative; }
+html.compact .activitybar { width: 44px; }
+html.compact .sidepanel { position: absolute; z-index: 20; top: 0; bottom: 0; left: 44px; width: min(86vw, 320px); box-shadow: var(--shadow); }
+html.compact .preview-pane { position: absolute; inset: 0; width: 100%; z-index: 15; }
+html.compact .split { position: relative; }
+html.compact .bottom-panel { height: min(38dvh, 260px); }
+html.compact .bottom-panel.maxed { height: 72%; }
+html.compact .bottom-panel.collapsed { height: 38px; }
+html.compact .statusbar { gap: 10px; padding-bottom: max(2px, env(safe-area-inset-bottom)); overflow: hidden; white-space: nowrap; }
+html.compact .toast-stack { left: 8px; right: 8px; max-width: none; bottom: 48px; }
+html.compact .welcome h1 { font-size: 22px; }
+html.compact .db-toolbar button { flex: none; }
+html.compact .modal { max-height: 92dvh; }
+
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }

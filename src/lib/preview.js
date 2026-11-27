@@ -68,3 +68,16 @@ export function buildPreview(files, entry) {
   else html = CONSOLE_BRIDGE + html;
   return { html, notes };
 }
+
+/**
+ * Wrap a built preview document so it can be opened in its own browser tab. The wrapper page is ByteForge's own
+ * (trusted) code; the project's HTML stays inside a sandboxed iframe WITHOUT allow-same-origin, so it still
+ * cannot read the workspace even though the wrapper is served from a blob: URL of the same origin.
+ */
+export function buildStandalonePreview(html, title = 'ByteForge preview') {
+  const attr = s => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+  const text = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${text(title)}</title>`
+    + '<style>html,body{margin:0;height:100%;background:#fff}iframe{display:block;border:0;width:100%;height:100%}</style></head><body>'
+    + `<iframe title="${attr(title)}" sandbox="allow-scripts allow-modals allow-forms allow-popups" srcdoc="${attr(html)}"></iframe></body></html>`;
+}
